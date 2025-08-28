@@ -1,0 +1,367 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}新規作成 - Michishare{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  /* マップ */
+  #spot-map{height:400px;border-radius:12px;overflow:hidden;border:1px solid var(--border)}
+
+  /* スポット行 */
+  .spot-item{
+    display:grid;
+    grid-template-columns:60px 1fr 100px 140px 1fr 72px 72px;
+    gap:8px; align-items:center; margin:8px 0;
+  }
+  /* 検索結果は行の全幅をとる */
+  .spot-item .results{ grid-column:1/-1; position:relative; }
+  .spot-item .results > .dropdown{
+    position:absolute; left:0; right:0; top:4px; z-index:20;
+    background:#fff; border:1px solid var(--border);
+    border-radius:10px; max-height:220px; overflow:auto;
+    box-shadow:0 6px 20px rgba(0,0,0,.06)
+  }
+  .spot-item .results button{
+    display:block;width:100%;padding:10px 12px;text-align:left;
+    background:#fff;border:0;border-bottom:1px solid #eee;cursor:pointer
+  }
+  .spot-item .results button:hover{background:#f8fafc}
+  .spot-item input[type="number"]{width:100%}
+  .btn-mini{padding:8px 10px}
+
+  /* 写真行（列数を要素数に合わせて修正） */
+  .photo-item{
+    display:grid;
+    grid-template-columns:80px 96px 1fr 1fr 72px; /* order / thumb / file / caption / delete */
+    gap:10px; align-items:center; margin:8px 0;
+  }
+  .thumb{display:none;width:96px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--border)}
+
+  /* モバイル */
+  @media (max-width: 768px){
+    .spot-item{ grid-template-columns:1fr 1fr; }
+    .spot-item .btn-mini{ width:100%; }
+    .photo-item{ grid-template-columns:64px 80px 1fr; }
+    .photo-item input[type="file"], .photo-item input[type="text"]{ grid-column:1/-1; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<form method="post" enctype="multipart/form-data" class="grid" style="gap:12px" novalidate>
+  {% csrf_token %}
+
+  <div class="card">
+    <div class="grid" style="gap:12px">
+      <label class="muted">Title</label>
+      {{ form.title }}
+      <label class="muted">Tags</label>
+      {{ form.tags }}
+      <label class="muted">Description</label>
+      {{ form.description }}
+    </div>
+  </div>
+
+  <!-- マップ -->
+  <div class="card">
+    <div class="muted" style="margin-bottom:8px">ルート（スポットを追加すると自動で引かれます）</div>
+    <div id="spot-map"></div>
+  </div>
+
+  <!-- スポット -->
+  <div class="card">
+    <h3 style="margin:0 0 8px 0">スポット</h3>
+    <div class="kpi">
+        <span class="inline-tip">合計時間: <b id="totalTime">—</b></span>
+        <button type="button" class="btn" id="addCurrent">現在地から追加</button>
+    </div>
+      
+    {{ spot_formset.management_form }}
+    <div id="spot-forms">
+      {% for f in spot_formset.forms %}
+      <div class="spot-item">
+        {{ f.order }}                  {# 並び順 #}
+        {{ f.name }}                   {# 場所名（検索対象） #}
+        {{ f.stay_minutes }}           {# 滞在分 #}
+        {% if f.transport_to_next %}{{ f.transport_to_next }}{% endif %}  {# 交通手段 #}
+        {{ f.note }}                   {# メモ #}
+
+        <button type="button" class="btn btn-mini" onclick="onSpotSearch(this)">検索</button>
+        <button type="button" class="btn danger btn-mini" onclick="removeSpot(this)">削除</button>
+
+        <div class="results"></div>
+
+        {{ f.id }}{{ f.lat }}{{ f.lng }}{% if f.DELETE %}{{ f.DELETE }}{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    <div style="margin-top:8px">
+      <button type="button" class="btn" onclick="addSpot()">スポット行を追加</button>
+    </div>
+  </div>
+
+  <!-- 写真 -->
+  <div class="card">
+    <h3 style="margin:0 0 8px 0">写真</h3>
+    {{ photo_formset.management_form }}
+    <div id="photo-forms">
+      {% for pf in photo_formset.forms %}
+      <div class="photo-item">
+        {{ pf.order }}
+        <img class="thumb" alt="">
+        {{ pf.image }}
+        {{ pf.caption }}
+        <button type="button" class="btn danger btn-mini" onclick="removePhoto(this)">削除</button>
+        {{ pf.id }}{% if pf.DELETE %}{{ pf.DELETE }}{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <div style="margin-top:8px">
+      <button type="button" class="btn" onclick="addPhoto()">写真行を追加</button>
+      <input type="file" id="bulkPhotos" multiple accept="image/*" class="hidden">
+      <label for="bulkPhotos" class="btn">写真をまとめて追加</label>
+    </div>
+  </div>
+
+  <div class="flex" style="gap:8px; display:flex">
+    <a class="btn" href="{% url 'plans:feed' %}">キャンセル</a>
+    <button class="btn primary" type="submit" id="submit-btn">投稿する</button>
+  </div>
+</form>
+
+<!-- 空フォーム（Formset append用） -->
+<script type="text/template" id="spot-empty">
+  <div class="spot-item">
+    <input type="number" name="spots-__prefix__-order" id="id_spots-__prefix__-order" value="1" min="1">
+    <input type="text"   name="spots-__prefix__-name"  id="id_spots-__prefix__-name"  placeholder="場所名">
+    <input type="number" name="spots-__prefix__-stay_minutes" id="id_spots-__prefix__-stay_minutes" value="0" min="0">
+    <select name="spots-__prefix__-transport_to_next" id="id_spots-__prefix__-transport_to_next">
+      <option>徒歩</option><option>自転車</option><option>車</option>
+      <option>電車</option><option>バス</option><option>船</option><option>その他</option>
+    </select>
+    <input type="text" name="spots-__prefix__-note" id="id_spots-__prefix__-note" placeholder="メモ">
+
+    <button type="button" class="btn btn-mini" onclick="onSpotSearch(this)">検索</button>
+    <button type="button" class="btn danger btn-mini" onclick="removeSpot(this)">削除</button>
+
+    <div class="results"></div>
+
+    <input type="hidden" name="spots-__prefix__-id"  id="id_spots-__prefix__-id">
+    <input type="hidden" name="spots-__prefix__-lat" id="id_spots-__prefix__-lat">
+    <input type="hidden" name="spots-__prefix__-lng" id="id_spots-__prefix__-lng">
+    <input type="checkbox" name="spots-__prefix__-DELETE" id="id_spots-__prefix__-DELETE" class="hidden">
+  </div>
+</script>
+
+<script type="text/template" id="photo-empty">
+  <div class="photo-item">
+    <input type="number" name="photos-__prefix__-order" id="id_photos-__prefix__-order" value="0" min="0">
+    <img class="thumb" alt="">
+    <input type="file" name="photos-__prefix__-image" id="id_photos-__prefix__-image" accept="image/*">
+    <input type="text" name="photos-__prefix__-caption" id="id_photos-__prefix__-caption" placeholder="キャプション">
+    <button type="button" class="btn danger btn-mini" onclick="removePhoto(this)">削除</button>
+
+    <input type="hidden"  name="photos-__prefix__-id" id="id_photos-__prefix__-id">
+    <input type="checkbox" name="photos-__prefix__-DELETE" id="id_photos-__prefix__-DELETE" class="hidden">
+  </div>
+</script>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin></script>
+<script>
+(function(){
+  const $ = (id)=>document.getElementById(id);
+
+  /* ==== 地図 ==== */
+  if ($('spot-map')){
+    window.spotMap = L.map('spot-map').setView([35.681236,139.767125], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap'}).addTo(window.spotMap);
+    window.poly = L.polyline([], {color:'#2563eb'}).addTo(window.spotMap);
+  }
+
+  /* ==== 行追加/削除 ==== */
+  window.addSpot = function(){
+    const cont = $('spot-forms'); if(!cont) return;
+    const tpl  = $('spot-empty').innerHTML;
+    const total= $('id_spots-TOTAL_FORMS');
+    const idx  = parseInt(total.value || '0', 10);
+    cont.insertAdjacentHTML('beforeend', tpl.replaceAll('__prefix__', idx));
+    total.value = idx + 1;
+    refreshMapFromForms();
+  };
+
+  window.removeSpot = function(btn){
+    const item = btn.closest('.spot-item'); if(!item) return;
+    const del  = item.querySelector('input[name$="-DELETE"]');
+    if (del){ del.checked = true; item.style.display = 'none'; }
+    else    { item.remove(); }
+    refreshMapFromForms();
+  };
+
+  window.addPhoto = function(){
+    const cont = $('photo-forms'); if(!cont) return;
+    const tpl  = $('photo-empty').innerHTML;
+    const total= $('id_photos-TOTAL_FORMS');
+    const idx  = parseInt(total.value || '0', 10);
+    cont.insertAdjacentHTML('beforeend', tpl.replaceAll('__prefix__', idx));
+    total.value = idx + 1;
+  };
+
+  window.removePhoto = function(btn){
+    const item = btn.closest('.photo-item'); if(!item) return;
+    const del  = item.querySelector('input[name$="-DELETE"]');
+    if (del){ del.checked = true; item.style.display = 'none'; }
+    else    { item.remove(); }
+  };
+
+  /* 写真プレビュー（動的行もOK：委譲） */
+  document.getElementById('photo-forms')?.addEventListener('change', (e)=>{
+    if(e.target?.type === 'file'){
+      const item = e.target.closest('.photo-item');
+      const img  = item?.querySelector('.thumb');
+      const f    = e.target.files?.[0];
+      if (img && f){ img.src = URL.createObjectURL(f); img.style.display='block'; }
+    }
+  });
+
+  /* ==== 検索（Nominatim） ==== */
+  window.onSpotSearch = async function(btn){
+    const box  = btn.closest('.spot-item');
+    const qEl  = box.querySelector('input[name$="-name"]');
+    const res  = box.querySelector('.results');
+    const q    = (qEl?.value || '').trim();
+    if (!q){ res.innerHTML=''; res.classList.remove('hidden'); return; }
+
+    res.classList.remove('hidden');
+    res.innerHTML = '<div class="dropdown"><div style="padding:8px;color:#666">検索中…</div></div>';
+
+    try{
+      const url = `https://nominatim.openstreetmap.org/search?format=json&accept-language=ja&limit=8&q=${encodeURIComponent(q)}`;
+      const r   = await fetch(url, {headers:{'Accept':'application/json'}});
+      const data= await r.json();
+      if (!Array.isArray(data) || !data.length){
+        res.innerHTML = '<div class="dropdown"><div style="padding:8px;color:#666">見つかりませんでした</div></div>';
+        return;
+      }
+      const esc = (s)=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const arg = (s)=>s.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      const html = data.map(d=>
+        `<button type="button" onclick="pickPlace(this,'${arg(d.display_name)}', ${d.lat}, ${d.lon})">${esc(d.display_name)}</button>`
+      ).join('');
+      res.innerHTML = `<div class="dropdown">${html}</div>`;
+    }catch{
+      res.innerHTML = '<div class="dropdown"><div style="padding:8px;color:#c00">エラーが発生しました</div></div>';
+    }
+  };
+
+  window.pickPlace = function(btn, name, lat, lon){
+    const box = btn.closest('.spot-item');
+    box.querySelector('input[name$="-name"]').value = name;
+    box.querySelector('input[name$="-lat"]').value  = lat;
+    box.querySelector('input[name$="-lng"]').value  = lon;
+    const res = box.querySelector('.results');
+    if (res){ res.innerHTML = ''; res.classList.add('hidden'); }
+    refreshMapFromForms();
+  };
+
+  // クリック外しで候補を閉じる
+  document.addEventListener('click', (e)=>{
+    document.querySelectorAll('.spot-item .results .dropdown').forEach(dd=>{
+      if (!dd.contains(e.target)) dd.parentElement.innerHTML='';
+    });
+  });
+
+  /* ==== 道路沿いルート（OSRM） ==== */
+  async function buildRoadRoute(segments){
+    let coords = [];
+    const modeMap = { walk:'walking', bike:'cycling', car:'driving' };
+    for (const seg of segments){
+      const prof = modeMap[seg.mode] || null;             // 電車/バス/船→直線
+      if (!prof){ coords.push([seg.a.lat,seg.a.lng],[seg.b.lat,seg.b.lng]); continue; }
+      const url =
+        `https://router.project-osrm.org/route/v1/${prof}/` +
+        `${seg.a.lng},${seg.a.lat};${seg.b.lng},${seg.b.lat}` +
+        `?overview=full&geometries=geojson`;
+      try{
+        const res  = await fetch(url);
+        const data = await res.json();
+        if (data.code === 'Ok'){
+          const line = data.routes[0].geometry.coordinates.map(([lng,lat])=>[lat,lng]);
+          if (coords.length) line.shift(); // つなぎ目を重複させない
+          coords = coords.concat(line);
+        }else{
+          coords.push([seg.a.lat,seg.a.lng],[seg.b.lat,seg.b.lng]);
+        }
+      }catch{
+        coords.push([seg.a.lat,seg.a.lng],[seg.b.lat,seg.b.lng]);
+      }
+    }
+    return coords;
+  }
+
+  /* ==== 地図再描画 ==== */
+  let refreshTimer = null;
+  window.refreshMapFromForms = function(){
+    if (!window.spotMap || !window.poly) return;
+
+    const rows = document.querySelectorAll('#spot-forms .spot-item');
+    const latlngs = [];
+    const segments = [];
+    let prev = null;
+
+    rows.forEach(row=>{
+      const del = row.querySelector('input[name$="-DELETE"]');
+      if (del && del.checked) return;
+      const lat = parseFloat(row.querySelector('input[name$="-lat"]')?.value);
+      const lng = parseFloat(row.querySelector('input[name$="-lng"]')?.value);
+      const modeSel = row.querySelector('select[name$="-transport_to_next"]');
+      if (!isNaN(lat) && !isNaN(lng)){
+        const cur = {lat, lng};
+        latlngs.push([lat, lng]);
+        if (prev){
+          const human = modeSel?.value || '徒歩';
+          const toMode = ({'徒歩':'walk','自転車':'bike','車':'car'})[human] || null;
+          segments.push({a: prev, b: cur, mode: toMode});
+        }
+        prev = cur;
+      }
+    });
+
+    window.poly.setLatLngs(latlngs);
+    if (latlngs.length) window.spotMap.fitBounds(L.latLngBounds(latlngs), {padding:[20,20]});
+
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(async ()=>{
+      const road = await buildRoadRoute(segments);
+      if (road.length){
+        window.poly.setLatLngs(road);
+        window.spotMap.fitBounds(L.latLngBounds(road), {padding:[20,20]});
+      }
+    }, 300);
+  };
+
+  // 入力変更で再描画
+  document.getElementById('spot-forms')?.addEventListener('input', (e)=>{
+    const n = e.target.name || '';
+    if (/-lat$|-lng$|-transport_to_next$|-name$|-order$|-stay_minutes$/.test(n)){
+      refreshMapFromForms();
+    }
+  });
+
+  // 簡易クライアントバリデーション（サーバーで弾かれて再読込→写真が消えるのを極力防止）
+  document.getElementById('submit-btn')?.addEventListener('click', (e)=>{
+    const title = document.querySelector('input[name="title"]');
+    if (title && !title.value.trim()){
+      e.preventDefault();
+      alert('タイトルを入力してください');
+    }
+  });
+
+  refreshMapFromForms();
+})();
+</script>
+{% endblock %}

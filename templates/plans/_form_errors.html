@@ -1,0 +1,15 @@
+{% if form.errors or form.non_field_errors %}
+  <div class="msg error">プランの入力にエラーがあります。</div>
+  <ul>
+    {% for f in form.visible_fields %}
+      {% for e in f.errors %}<li>{{ f.label }}: {{ e }}</li>{% endfor %}
+    {% endfor %}
+    {% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}
+  </ul>
+{% endif %}
+{% if sfs.non_form_errors %}
+  <div class="msg error">{{ sfs.non_form_errors }}</div>
+{% endif %}
+{% if pfs.non_form_errors %}
+  <div class="msg error">{{ pfs.non_form_errors }}</div>
+{% endif %}

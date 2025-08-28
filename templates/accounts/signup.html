@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}新規登録 | Michishare{% endblock %}
+{% block content %}
+<div class="container" style="max-width:520px">
+  <h1 style="margin:8px 0 12px">新規登録</h1>
+  <form method="post" class="card">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <div class="grid" style="display:grid;gap:10px">
+      <label>ユーザー名{{ form.username.errors }}{{ form.username }}</label>
+      <label>パスワード{{ form.password1.errors }}{{ form.password1 }}</label>
+      <label>パスワード（確認）{{ form.password2.errors }}{{ form.password2 }}</label>
+    </div>
+    <div class="form-actions">
+      <a class="btn ghost" href="{% url 'login' %}">ログインへ</a>
+      <button class="btn primary" type="submit">登録してはじめる</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+

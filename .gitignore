@@ -1,0 +1,28 @@
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+
+# venv
+.venv/
+venv/
+ENV/
+env/
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+
+# Django local stuff
+*.sqlite3
+db.sqlite3
+/media/
+staticfiles/        # collectstatic の出力（再生成可能）
+.env                # 秘密値
+*.log
+
+# Node（使ってないなら無視してOK）
+node_modules/

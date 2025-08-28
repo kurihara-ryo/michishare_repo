@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}{{ plan.title }}{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin>
+<style>#map{height:60vh}</style>
+{% endblock %}
+{% block content %}
+<div class="container" style="max-width:1000px">
+  <h1>{{ plan.title }}</h1>
+  <div class="grid" style="grid-template-columns:1fr;gap:12px">
+    <div id="map"></div>
+    <div class="card">
+      <h3>行程</h3>
+      <ol>
+        {% for s in plan.spots.all %}
+          <li>{{ s.order }}. {{ s.name }}（滞在 {{ s.stay_minutes }}分 / 移動 {{ s.get_transport_to_next_display }}）</li>
+        {% empty %}<li class="muted">スポット未登録</li>{% endfor %}
+      </ol>
+    </div>
+    <div class="card">
+      <h3>写真</h3>
+      <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px">
+        {% for p in plan.photos.all %}
+          <img src="{{ p.image.url }}" alt="{{ p.caption|default:plan.title }}" style="width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:10px;border:1px solid var(--border)">
+        {% empty %}<p class="muted">写真はまだありません。</p>{% endfor %}
+      </div>
+    </div>
+    <div class="card">
+      <div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap">
+        <button id="gps-start" class="btn ok">GPS記録開始</button>
+        <button id="gps-stop"  class="btn" disabled>停止 & 保存</button>
+        <button id="gps-clear" class="btn">未保存の軌跡をクリア</button>
+        <span id="gps-status" class="muted"></span>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin></script>
+<script>
+const map=L.map('map').setView([35.681236,139.767125],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap'}).addTo(map);
+
+// スポット
+const spots={{ spots|safe }};
+if(spots.length){
+  const line=L.polyline(spots.map(s=>[s.lat,s.lng]),{dashArray:'4 6'}).addTo(map);
+  spots.forEach((s,i)=>L.marker([s.lat,s.lng]).addTo(map).bindPopup(`${i+1}. ${s.name}`));
+  map.fitBounds(line.getBounds(),{padding:[20,20]});
+}
+
+// 保存済みルート
+let route=JSON.parse('{{ route_json|escapejs }}'||'[]');
+const routeLine=L.polyline(route,{color:'blue'}).addTo(map);
+if(route.length) map.fitBounds(routeLine.getBounds(),{padding:[20,20]});
+
+// 記録
+const startBtn=document.getElementById('gps-start');
+const stopBtn =document.getElementById('gps-stop');
+const clearBtn=document.getElementById('gps-clear');
+const statusEl=document.getElementById('gps-status');
+let watchId=null, startedAt=null;
+const MIN=10, MAX=10000;
+function setStatus(t){statusEl.textContent=t}
+function dist(a,b){const R=6371000, toRad=x=>x*Math.PI/180, dLa=toRad(b[0]-a[0]), dLo=toRad(b[1]-a[1]), la1=toRad(a[0]), la2=toRad(b[0]); const x=Math.sin(dLa/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLo/2)**2; return 2*R*Math.asin(Math.sqrt(x));}
+function push(lat,lng){const pt=[lat,lng];const last=route[route.length-1]; if(!last||dist(last,pt)>=MIN){route.push(pt); if(route.length>MAX) route.shift(); routeLine.setLatLngs(route); localStorage.setItem('route_plan_{{ plan.pk }}', JSON.stringify(route));}}
+
+startBtn.onclick=()=>{
+  if(!navigator.geolocation){alert('位置情報非対応');return;}
+  startedAt=new Date().toISOString();
+  setStatus('位置情報の許可を要求中…'); startBtn.disabled=true; stopBtn.disabled=false;
+  watchId=navigator.geolocation.watchPosition(pos=>{
+    const {latitude,longitude,accuracy}=pos.coords;
+    push(latitude,longitude);
+    setStatus(`記録中: ±${Math.round(accuracy)}m / ${route.length}点`);
+    if(route.length===1) map.setView([latitude,longitude],16);
+  },err=>{
+    setStatus(`エラー: ${err.message}`); startBtn.disabled=false; stopBtn.disabled=true;
+  },{enableHighAccuracy:true,maximumAge:0,timeout:15000});
+};
+
+function getCookie(n){const v=`; ${document.cookie}`;const p=v.split(`; ${n}=`); if(p.length===2) return p.pop().split(';').shift();}
+async function saveRoute(){
+  const payload={coordinates: route.map(([la,lo])=>[lo,la]), started_at: startedAt, ended_at:new Date().toISOString()};
+  const res=await fetch("{% url 'plans:track_save' plan.pk %}",{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')},body:JSON.stringify(payload)});
+  if(!res.ok) throw new Error(await res.text()); return res.json();
+}
+
+stopBtn.onclick=async ()=>{
+  if(watchId!==null){navigator.geolocation.clearWatch(watchId); watchId=null;}
+  startBtn.disabled=false; stopBtn.disabled=true;
+  try{ setStatus('サーバーへ保存中…'); const r=await saveRoute(); localStorage.removeItem('route_plan_{{ plan.pk }}'); setStatus(`保存完了（${r.count}点）`); }
+  catch(e){ setStatus('保存失敗'); alert(e); }
+};
+clearBtn.onclick=()=>{ if(!confirm('未保存の軌跡を消去しますか？')) return; route=[]; routeLine.setLatLngs(route); localStorage.removeItem('route_plan_{{ plan.pk }}'); };
+</script>
+{% endblock %}

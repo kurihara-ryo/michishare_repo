@@ -1,0 +1,21 @@
+{# templates/accounts/search.html #}
+{% extends "base.html" %}
+{% block title %}ユーザー検索 | Michishare{% endblock %}
+{% block content %}
+  <div class="container" style="max-width:720px">
+    <h1>ユーザー検索</h1>
+    <form method="get" class="search-pill" style="margin:8px 0 12px">
+      <input type="search" name="q" value="{{ q }}" placeholder="@username / プロフィール">
+      <button class="btn">検索</button>
+    </form>
+
+    {% for u in users %}
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <a class="brand" href="{% url 'accounts:profile' u.username %}">@{{ u.username }}</a>
+        <span class="muted">フォロワー {{ u.followers_count }} / フォロー {{ u.following_count }}</span>
+      </div>
+    {% empty %}
+      <p class="muted">検索ワードを入力してください。</p>
+    {% endfor %}
+  </div>
+{% endblock %}

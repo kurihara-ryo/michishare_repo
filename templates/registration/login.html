@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}ログイン | Michishare{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:420px">
+  <h1 style="margin-bottom:12px">ログイン</h1>
+
+  {% if form.errors %}
+    <div class="messages"><div class="msg error">ユーザー名またはパスワードが正しくありません。</div></div>
+  {% endif %}
+
+  <form method="post" action="{% url 'login' %}">
+    {% csrf_token %}
+    <div class="card" style="display:grid;gap:12px">
+      <p>
+        <label for="{{ form.username.id_for_label }}">ユーザー名</label><br>
+        {{ form.username }}
+      </p>
+      <p>
+        <label for="{{ form.password.id_for_label }}">パスワード</label><br>
+        {{ form.password }}
+      </p>
+      <input type="hidden" name="next" value="{{ next }}">
+      <button type="submit" class="btn primary">ログイン</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

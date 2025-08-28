@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}写真フィード | Michishare{% endblock %}
+
+{% block extra_head %}
+<style>
+  .grid{display:grid;gap:8px}
+  .grid-ig{grid-template-columns:repeat(2,1fr)}
+  @media (min-width:768px){ .grid-ig{grid-template-columns:repeat(3,1fr)} }
+  .pic{display:block;border:1px solid var(--border);border-radius:14px;overflow:hidden;background:#fff}
+  .frame{position:relative;width:100%;aspect-ratio:1/1;background:#f3f4f6}
+  .frame img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+  .cap{padding:10px;display:flex;justify-content:space-between;align-items:center}
+  .by{color:var(--muted);font-size:12px}
+</style>
+{% endblock %}
+
+{% block content %}
+  <div class="container" style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 12px">
+    <h1 style="margin:0">写真フィード</h1>
+    <a class="btn" href="{% url 'plans:feed' %}">プラン一覧</a>
+  </div>
+
+  <div class="container grid grid-ig">
+    {% for p in photos %}
+      <a class="pic" href="{% url 'plans:plan_detail' p.plan_id %}">
+        <div class="frame"><img src="{{ p.image.url }}" alt="{{ p.caption|default:p.plan.title }}"></div>
+        <div class="cap">
+          <div class="title">{{ p.plan.title }}</div>
+          <div class="by">@{{ p.plan.author.username }}</div>
+        </div>
+      </a>
+    {% empty %}
+      <p class="muted">まだ写真がありません。</p>
+    {% endfor %}
+  </div>
+{% endblock %}

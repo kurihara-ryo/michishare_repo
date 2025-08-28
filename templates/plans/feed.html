@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}最新プラン | Michishare{% endblock %}
+{% block extra_head %}
+<style>
+.grid{display:grid;gap:8px}
+.grid-ig{grid-template-columns:repeat(2,1fr)}
+@media (min-width:768px){ .grid-ig{grid-template-columns:repeat(3,1fr)} }
+.post{display:block;border:1px solid var(--border);border-radius:14px;overflow:hidden;background:#fff}
+.post .frame{position:relative;width:100%;aspect-ratio:1/1;background:#f3f4f6}
+.post img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.post .meta{display:flex;align-items:center;justify-content:space-between;padding:10px}
+.post .title{font-weight:700}
+.post .by{color:var(--muted);font-size:12px}
+</style>
+{% endblock %}
+{% block content %}
+<div class="container" style="margin:8px 0 12px"><h1 style="margin:0">最新プラン</h1></div>
+<div class="container grid grid-ig">
+  {% for plan in plans %}
+    {% with first=plan.photos.all.0 %}
+    <a class="post" href="{% url 'plans:plan_detail' plan.pk %}">
+      <div class="frame">
+        {% if first %}
+            <img
+                src="{{ first.image.url }}"
+                alt="{{ plan.title }}"
+                loading="lazy" decoding="async"
+                width="{{ first.image.width }}" height="{{ first.image.height }}"
+                sizes="(max-width: 767px) 50vw, 33vw"
+            >
+        {% endif %}
+        {% if forloop.counter0 < 3 %} fetchpriority="high" loading="eager" {% endif %}
+      </div>
+      <div class="meta"><div class="title">{{ plan.title }}</div><div class="by">@{{ plan.author.username }}</div></div>
+    </a>
+    {% endwith %}
+  {% empty %}<p class="muted">まだ投稿がありません。</p>{% endfor %}
+</div>
+{% endblock %}

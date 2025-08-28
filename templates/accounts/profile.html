@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}@{{ target.username }}{% endblock %}
+
+{% block content %}
+
+<!-- ヒーロー（ユーザー見出し） -->
+<div class="card profile-hero">
+  <img class="avatar-lg"
+       src="{% if target.profile and target.profile.avatar %}{{ target.profile.avatar.url }}{% else %}{% static 'img/avatar-placeholder.png' %}{% endif %}"
+       alt="">
+  <div class="hero-meta">
+    <div class="username">@{{ target.username }}</div>
+    <div class="muted">
+      フォロワー <b id="followersCount">{{ followers_count|default:0 }}</b> ・
+      フォロー <b>{{ following_count|default:0 }}</b>
+    </div>
+  </div>
+
+  <div class="profile-actions">
+    {% if user.is_authenticated and request.user != target %}
+      <!-- Ajaxでトグル。URLはdata-urlへ（ハードコード回避） -->
+      <button id="followBtn"
+              class="btn {% if following %}ok{% else %}primary{% endif %}"
+              data-url="{% url 'social:follow_toggle' target.username %}">
+        {% if following %}フォロー中{% else %}フォロー{% endif %}
+      </button>
+    {% elif is_me %}
+      <a href="#edit" class="btn">プロフィールを編集</a>
+    {% endif %}
+  </div>
+</div>
+
+<!-- 自分のページだけ編集フォームを表示 -->
+{% if is_me %}
+<form method="post" enctype="multipart/form-data" class="card profile-edit" id="edit">
+  {% csrf_token %}
+  <h3 class="section-title">プロフィール編集</h3>
+
+  <div class="edit-grid">
+    <!-- アイコン -->
+    <div>
+      <label class="muted">アイコン</label>
+      <div class="file-drop">
+        <img id="avatarPreview"
+             src="{% if target.profile and target.profile.avatar %}{{ target.profile.avatar.url }}{% else %}{% static 'img/avatar-placeholder.png' %}{% endif %}"
+             alt="" />
+        <div class="file-ops">
+          <label class="btn">
+            画像を選ぶ
+            <input type="file" name="avatar" id="avatarInput" accept="image/*" hidden>
+          </label>
+          <div class="muted tiny">JPG/PNG, ~5MB 推奨</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ひとこと -->
+    <div>
+      <label class="muted">ひとこと</label>
+      <textarea name="bio" id="id_bio" rows="3" maxlength="140"
+        placeholder="自己紹介や一言メッセージ">{{ form.bio.value|default_if_none:'' }}</textarea>
+      <div class="muted tiny" id="bioCount">0 / 140</div>
+    </div>
+  </div>
+
+  <div class="edit-actions">
+    <button class="btn primary" type="submit">保存</button>
+  </div>
+</form>
+{% endif %}
+
+<!-- 投稿一覧 -->
+<div class="card">
+  <div class="section-title">投稿</div>
+
+  {% if plans and plans|length %}
+    <div class="tile-grid">
+      {% for p in plans %}
+        <div class="tile">
+          <a href="{% url 'plans:plan_detail' p.pk %}" class="tile-link">
+            {% with cover=p.photos.first %}
+              {% if cover %}
+                <img src="{{ cover.image.url }}" class="cover" alt="">
+              {% else %}
+                <img src="{% static 'img/placeholder-4x3.png' %}" class="cover" alt="">
+              {% endif %}
+            {% endwith %}
+            <div class="meta">
+              <div class="title">{{ p.title }}</div>
+              <div class="handle muted">@{{ p.author.username }}</div>
+            </div>
+          </a>
+
+          {% if is_me %}
+          <div class="overlay">
+            <form method="post" action="{% url 'plans:plan_delete' p.pk %}" onsubmit="return confirm('この投稿を削除しますか？');">
+              {% csrf_token %}
+              <button class="btn danger delbtn" type="submit">削除</button>
+            </form>
+          </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="muted">まだ投稿がありません。</div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // ===== フォロー・アンフォロー（Ajax） =====
+  (() => {
+    const btn = document.getElementById("followBtn");
+    if (!btn) return;
+    btn.addEventListener("click", async () => {
+      try {
+        const res = await fetch(btn.dataset.url, {
+          method: "POST",
+          headers: { "X-CSRFToken": getCookie("csrftoken") },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.ok) {
+          btn.classList.toggle("ok", data.following);
+          btn.classList.toggle("primary", !data.following);
+          btn.textContent = data.following ? "フォロー中" : "フォロー";
+          const fc = document.getElementById("followersCount");
+          if (fc) fc.textContent = data.followers_count;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    });
+  })();
+
+  // ===== アバタープレビュー =====
+  (() => {
+    const input = document.getElementById('avatarInput');
+    const prev  = document.getElementById('avatarPreview');
+    if (input && prev) {
+      input.addEventListener('change', (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (f) prev.src = URL.createObjectURL(f);
+      });
+    }
+  })();
+
+  // ===== ひとことカウンタ =====
+  (() => {
+    const bio = document.getElementById('id_bio');
+    const counter = document.getElementById('bioCount');
+    function updateCnt(){
+      if (!bio || !counter) return;
+      const len = bio.value.trim().length;
+      counter.textContent = `${len} / 140`;
+    }
+    if (bio) {
+      bio.addEventListener('input', updateCnt);
+      updateCnt();
+    }
+  })();
+</script>
+{% endblock %}
